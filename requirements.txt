@@ -1,0 +1,7 @@
+pdfplumber
+python-docx
+sentence-transformers
+psycopg[binary]
+google-genai
+streamlit
+python-dotenv
