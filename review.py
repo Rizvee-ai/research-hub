@@ -89,13 +89,53 @@ def generate(topic, kind="review", doc_type=None, label=None, limit=20):
         model=GEMINI_MODEL, contents=prompt
     ).text
 
-    # resolve the numbers to real references, in code
+    text = resolve_citations(text, docs)
+
+    # a plain list of what was actually read, with the real filename
+    # and a link, so any claim can be checked against the source
+    lines = [f"\n\n---\n\n**Read from {len(docs)} document"
+             f"{'s' if len(docs) != 1 else ''}:**\n"]
     for i, d in enumerate(docs, start=1):
-        name = d["title"] or "Untitled"
-        ref = f"({name}{', ' + str(d['doc_date']) if d['doc_date'] else ''})"
-        text = text.replace(f"[{i}]", ref)
+        name = d["title"] or d.get("filename") or "Untitled"
+        line = f"{i}. {name}"
+        if d.get("filename") and d["filename"] != name:
+            line += f"  \n    *file:* `{d['filename']}`"
+        if d.get("source_path", "").startswith("http"):
+            line += f"  \n    [open in Drive]({d['source_path']})"
+        lines.append(line)
 
-    note = (f"\n\n---\nBuilt from {len(docs)} document"
-            f"{'s' if len(docs) != 1 else ''} in the collection.")
+    return text + "\n".join(lines), docs
 
-    return text + note, docs
+
+def resolve_citations(text, docs):
+    """
+    Turn [3] and [1, 2] into document names.
+
+    Done in descending numeric order, because replacing [1] first
+    would corrupt [12] and [19]. Handles grouped markers as well as
+    single ones.
+    """
+    import re
+
+    def name_of(n):
+        if not 1 <= n <= len(docs):
+            return None
+        d = docs[n - 1]
+        name = d["title"] or d.get("filename") or "Untitled"
+        if d.get("doc_date"):
+            name += f", {d['doc_date']}"
+        return name
+
+    def replace(match):
+        numbers = [int(x) for x in re.findall(r"\d+", match.group(0))]
+        names = [name_of(n) for n in numbers]
+        names = [n for n in names if n]
+        if not names:
+            return match.group(0)
+        # keep it readable when several documents support one claim
+        if len(names) > 2:
+            return f"({names[0]}, and {len(names) - 1} others)"
+        return "(" + "; ".join(names) + ")"
+
+    # [1, 2, 7] and [4] alike
+    return re.sub(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]", replace, text)

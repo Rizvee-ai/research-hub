@@ -12,8 +12,7 @@ def connect():
         raise RuntimeError(
             "DATABASE_URL is not set. Check your .env file."
         )
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row,
-                           prepare_threshold=None)
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
 # ─── writing ─────────────────────────────────────────────────────
@@ -106,12 +105,13 @@ def documents_by_filter(doc_type=None, topic=None, limit=25):
     with connect() as conn:
         return conn.execute(
             """
-            SELECT id, title, authors, doc_date, full_text
+            SELECT id, title, authors, doc_date, full_text,
+                   filename, source_path
             FROM documents
             WHERE status = 'ingested'
               AND full_text IS NOT NULL
-              AND (%s::text IS NULL OR doc_type = %s::text)
-              AND (%s::text IS NULL OR %s::text = ANY(topics))
+              AND (%s IS NULL OR doc_type = %s)
+              AND (%s IS NULL OR %s = ANY(topics))
             ORDER BY word_count DESC
             LIMIT %s
             """,
