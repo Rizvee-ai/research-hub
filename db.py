@@ -101,22 +101,40 @@ def all_documents():
 
 
 def documents_by_filter(doc_type=None, topic=None, limit=25):
-    """Used by briefs and reviews to pick which documents to read whole."""
+    """
+    Used by briefs and reviews to pick which documents to read whole.
+
+    The filters are added to the query only when they are actually set,
+    rather than passed as NULL and tested inside the SQL. Passing NULL
+    left Postgres unable to work out what type the parameter was, which
+    failed with "could not determine data type of parameter". Building
+    the clause instead of casting it removes the problem rather than
+    patching it.
+    """
+    where = ["status = 'ingested'", "full_text IS NOT NULL"]
+    params = []
+
+    if doc_type:
+        where.append("doc_type = %s")
+        params.append(doc_type)
+
+    if topic:
+        where.append("%s = ANY(topics)")
+        params.append(topic)
+
+    params.append(limit)
+
+    sql = f"""
+        SELECT id, title, authors, doc_date, full_text,
+               filename, source_path
+        FROM documents
+        WHERE {' AND '.join(where)}
+        ORDER BY word_count DESC
+        LIMIT %s
+    """
+
     with connect() as conn:
-        return conn.execute(
-            """
-            SELECT id, title, authors, doc_date, full_text,
-                   filename, source_path
-            FROM documents
-            WHERE status = 'ingested'
-              AND full_text IS NOT NULL
-              AND (%s IS NULL OR doc_type = %s)
-              AND (%s IS NULL OR %s = ANY(topics))
-            ORDER BY word_count DESC
-            LIMIT %s
-            """,
-            (doc_type, doc_type, topic, topic, limit),
-        ).fetchall()
+        return conn.execute(sql, tuple(params)).fetchall()
 
 
 def counts():
