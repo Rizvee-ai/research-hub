@@ -110,8 +110,8 @@ def documents_by_filter(doc_type=None, topic=None, limit=25):
             FROM documents
             WHERE status = 'ingested'
               AND full_text IS NOT NULL
-              AND (%s IS NULL OR doc_type = %s)
-              AND (%s IS NULL OR %s = ANY(topics))
+              AND (%s::text IS NULL OR doc_type = %s::text)
+              AND (%s::text IS NULL OR %s::text = ANY(topics))
             ORDER BY word_count DESC
             LIMIT %s
             """,
