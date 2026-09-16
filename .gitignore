@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 documents/
 .venv/
+drive-key.json
+drive_cache/

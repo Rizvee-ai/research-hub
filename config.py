@@ -28,7 +28,7 @@ TOP_K = 8
 # below this, we treat the collection as not covering the question
 MIN_SIMILARITY = 0.25
 
-GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 # secrets, read from .env — never hard-code these
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -36,6 +36,7 @@ DATABASE_URL   = os.getenv("DATABASE_URL")
 
 # where the PDFs and Word files live
 DOCS_DIR = os.getenv("DOCS_DIR", "documents")
+DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID")
 
 
 # ─── fixed lists ─────────────────────────────────────────────────
