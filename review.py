@@ -29,6 +29,34 @@ def client():
     return _client
 
 
+def generate(prompt, model=None, attempts=4):
+    """
+    One call to Gemini, retried when Google is busy.
+
+    A 503 means their servers are overloaded and a 429 means a rate
+    limit was touched — both clear on their own. Giving up on the first
+    one puts an error in front of the person asking, when waiting a few
+    seconds would have worked.
+    """
+    import time
+
+    last = None
+    for attempt in range(attempts):
+        try:
+            return client().models.generate_content(
+                model=model or GEMINI_MODEL, contents=prompt
+            ).text
+        except Exception as e:
+            last = e
+            text = str(e)
+            transient = ("503" in text or "UNAVAILABLE" in text
+                         or "429" in text or "overloaded" in text.lower())
+            if not transient or attempt == attempts - 1:
+                raise
+            time.sleep(5 * (attempt + 1))     # 5s, 10s, 15s
+    raise last
+
+
 BRIEF = """Write a short briefing on: {topic}
 
 Use ONLY the documents below. Structure it as:
@@ -85,9 +113,7 @@ def generate(topic, kind="review", doc_type=None, label=None, limit=20):
     template = BRIEF if kind == "brief" else REVIEW
     prompt = template.format(topic=topic, documents=body, n=len(docs))
 
-    text = client().models.generate_content(
-        model=GEMINI_MODEL, contents=prompt
-    ).text
+    text = generate(prompt)
 
     text = resolve_citations(text, docs)
 
