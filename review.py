@@ -19,6 +19,11 @@ from config import GEMINI_API_KEY, GEMINI_MODEL
 
 _client = None
 
+# How much of each document is sent. Kept small because the app and
+# the embedding model share one small container, and loading whole
+# documents was crashing it.
+CHARS_PER_DOC = 6000
+
 
 def client():
     global _client
@@ -29,7 +34,7 @@ def client():
     return _client
 
 
-def generate(prompt, model=None, attempts=4):
+def generate(prompt, model=None, attempts=5):
     """
     One call to Gemini, retried when Google is busy.
 
@@ -53,7 +58,7 @@ def generate(prompt, model=None, attempts=4):
                          or "429" in text or "overloaded" in text.lower())
             if not transient or attempt == attempts - 1:
                 raise
-            time.sleep(5 * (attempt + 1))     # 5s, 10s, 15s
+            time.sleep(15 * (attempt + 1))    # 15s, 30s, 45s, 60s
     raise last
 
 
@@ -91,7 +96,7 @@ in the field.
 """
 
 
-def generate(topic, kind="review", doc_type=None, label=None, limit=20):
+def generate(topic, kind="review", doc_type=None, label=None, limit=6):
     """
     kind is "brief" or "review".
     Returns (text, documents_used).
@@ -102,13 +107,22 @@ def generate(topic, kind="review", doc_type=None, label=None, limit=20):
         return ("No documents in the collection match that filter, "
                 "so there is nothing to summarise."), []
 
-    body = "\n\n".join(
-        f"[{i}] {d['title'] or 'Untitled'}"
-        f"{' — ' + d['authors'] if d['authors'] else ''}"
-        f"{' (' + str(d['doc_date']) + ')' if d['doc_date'] else ''}\n"
-        f"{(d['full_text'] or '')[:30000]}"
-        for i, d in enumerate(docs, start=1)
-    )
+    # Built a piece at a time, dropping each document's text once it
+    # has been added. Holding all of them in memory at once was enough
+    # to kill the process on a small container — the app would die
+    # rather than return an error.
+    parts = []
+    for i, d in enumerate(docs, start=1):
+        head = f"[{i}] {d['title'] or 'Untitled'}"
+        if d["authors"]:
+            head += f" — {d['authors']}"
+        if d["doc_date"]:
+            head += f" ({d['doc_date']})"
+        parts.append(head + "\n" + (d["full_text"] or "")[:CHARS_PER_DOC])
+        d["full_text"] = None          # not needed again
+
+    body = "\n\n".join(parts)
+    del parts
 
     template = BRIEF if kind == "brief" else REVIEW
     prompt = template.format(topic=topic, documents=body, n=len(docs))
