@@ -22,7 +22,7 @@ _client = None
 # How much of each document is sent. Kept small because the app and
 # the embedding model share one small container, and loading whole
 # documents was crashing it.
-CHARS_PER_DOC = 6000
+CHARS_PER_DOC = 10000
 
 
 def client():
@@ -34,7 +34,7 @@ def client():
     return _client
 
 
-def generate(prompt, model=None, attempts=5):
+def call_gemini(prompt, model=None, attempts=5):
     """
     One call to Gemini, retried when Google is busy.
 
@@ -96,7 +96,7 @@ in the field.
 """
 
 
-def generate(topic, kind="review", doc_type=None, label=None, limit=6):
+def generate(topic, kind="review", doc_type=None, label=None, limit=10):
     """
     kind is "brief" or "review".
     Returns (text, documents_used).
@@ -127,7 +127,7 @@ def generate(topic, kind="review", doc_type=None, label=None, limit=6):
     template = BRIEF if kind == "brief" else REVIEW
     prompt = template.format(topic=topic, documents=body, n=len(docs))
 
-    text = generate(prompt)
+    text = call_gemini(prompt)
 
     text = resolve_citations(text, docs)
 

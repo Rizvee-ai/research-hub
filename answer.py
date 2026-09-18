@@ -30,7 +30,7 @@ def client():
     return _client
 
 
-def generate(prompt, model=None, attempts=4):
+def call_gemini(prompt, model=None, attempts=4):
     """
     One call to Gemini, retried when Google is busy.
 
@@ -94,7 +94,7 @@ def ask(question, doc_type=None, topic=None):
         f"[{i}] {h['text']}" for i, h in enumerate(hits, start=1)
     )
 
-    text = generate(TEMPLATE.format(context=context, question=question))
+    text = call_gemini(TEMPLATE.format(context=context, question=question))
 
     return resolve_citations(text, hits), hits
 
