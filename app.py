@@ -66,10 +66,9 @@ with tab_browse:
         ingested = [r for r in rows if r["status"] == "ingested"]
         excluded = [r for r in rows if r["status"] != "ingested"]
 
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         c1.metric("Documents", len(ingested))
         c2.metric("Excluded", len(excluded))
-        c3.metric("Unchecked", sum(1 for r in ingested if not r["reviewed_by"]))
 
         st.dataframe(
             [
@@ -81,7 +80,6 @@ with tab_browse:
                     "Topics": ", ".join(r["topics"] or []),
                     "Pages": r["page_count"],
                     "Words": r["word_count"],
-                    "Checked": "yes" if r["reviewed_by"] else "",
                 }
                 for r in ingested
             ],
