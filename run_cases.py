@@ -30,9 +30,14 @@ from pathlib import Path
 RESULTS = Path("case_results.md")
 LEDGER = Path("ingest_ledger.json")
 
-# How many documents the sampled cases look at. Raise for a firmer
-# number, lower to spend less quota.
-SAMPLE = 25
+# How many documents the sampled cases look at.
+#
+# At 25 the margin of error on a percentage is around ten points, which
+# is wider than most of the changes worth making — two runs of the same
+# unchanged system came back 12 points apart. 100 brings it to about
+# five. Lower it only to spend less quota, and say so when quoting a
+# figure taken at 25.
+SAMPLE = 100
 
 results = []
 
@@ -638,12 +643,24 @@ def case_c1(sample=None):
     import answer as answer_mod
     from config import TOP_K
 
+    # How deep to look when asking the second question: is the document
+    # missing, or merely ranked low?
+    DEEP = 50
+
+    # One passage per document, not one per passage. Sampling passages
+    # means a 684-page manual is drawn two hundred times more often than
+    # a two-page flyer, and the figure then describes the longest
+    # documents rather than the collection.
     with db.connect() as conn:
         rows = conn.execute(
             """
-            SELECT c.doc_id, c.text, d.filename, d.title
-            FROM chunks c JOIN documents d ON d.id = c.doc_id
-            WHERE d.status = 'ingested' AND length(c.text) > 600
+            SELECT * FROM (
+                SELECT DISTINCT ON (c.doc_id)
+                       c.doc_id, c.text, d.filename, d.title
+                FROM chunks c JOIN documents d ON d.id = c.doc_id
+                WHERE d.status = 'ingested' AND length(c.text) > 600
+                ORDER BY c.doc_id, random()
+            ) one_each
             ORDER BY random() LIMIT %s
             """,
             (sample,),
@@ -654,15 +671,36 @@ def case_c1(sample=None):
                "no passages long enough to work from")
         return
 
+    # The first version of this prompt said only "use different wording",
+    # and the model complied by removing every proper noun — producing
+    # questions like "how do the struggles within this environment
+    # differ", which name nothing and which no search could answer. It
+    # was scoring the search for failing questions that were unanswerable
+    # as written. A question has to stand on its own to be a fair test.
     ASKER = (
-        "Write one question that this passage answers. Use different "
-        "wording from the passage — different verbs and synonyms where you "
-        "can. Do not quote it, do not name the document, and do not use "
-        "any phrase longer than two words from it. Return the question "
-        "alone.\n\nPASSAGE:\n{text}"
+        "Write one question that this passage answers.\n\n"
+        "The question must stand on its own. Someone who has never seen "
+        "the passage must be able to tell what it is about. Name the "
+        "subject — the organisation, the programme, the place, the "
+        "profession — rather than writing 'this programme', 'these "
+        "sessions', 'this company' or 'the provided document'.\n\n"
+        "Word it differently from the passage: different verbs, "
+        "synonyms where they exist, no quoted phrase longer than two "
+        "words.\n\n"
+        "Return the question alone.\n\nPASSAGE:\n{text}"
     )
 
-    found_top = found_first = tried = 0
+    # Questions that point at something without naming it. The model
+    # still produces them occasionally; they are dropped rather than
+    # counted as failures.
+    VAGUE = (" this ", " these ", " the provided ", " the document ",
+             " the passage ", " the above ", "this programme", "this program")
+
+    def unanswerable(q):
+        padded = " " + q.lower().strip() + " "
+        return any(v in padded for v in VAGUE)
+
+    found_top = found_first = found_deep = tried = dropped = 0
     misses = []
     for i, r in enumerate(rows, start=1):
         name = (r["title"] or r["filename"])[:44]
@@ -677,17 +715,34 @@ def case_c1(sample=None):
             print(f"failed — {type(e).__name__}")
             continue
 
-        hits = search.search(question, k=TOP_K)
-        ids = [h["doc_id"] for h in hits]
+        if unanswerable(question):
+            print("question names nothing — dropped")
+            dropped += 1
+            time.sleep(1)
+            continue
+
+        # Fetched deep, then read two ways. Whether the document is in
+        # the top eight is the score. Whether it is anywhere in the top
+        # fifty says which problem you have: a document ranked 30th is
+        # being found and ordered badly, which re-ranking fixes in code.
+        # A document absent from fifty is not being found at all, and no
+        # amount of re-ordering will help.
+        deep = search.search(question, k=DEEP)
+        ids = [h["doc_id"] for h in deep]
+        top = ids[:TOP_K]
         tried += 1
-        if r["doc_id"] in ids:
+
+        if r["doc_id"] in top:
             found_top += 1
-            place = ids.index(r["doc_id"]) + 1
+            place = top.index(r["doc_id"]) + 1
             if place == 1:
                 found_first += 1
             print(f"found at {place}")
+        elif r["doc_id"] in ids:
+            found_deep += 1
+            print(f"at {ids.index(r['doc_id']) + 1} — below the top {TOP_K}")
         else:
-            print("NOT FOUND")
+            print(f"NOT in the top {DEEP}")
             misses.append((name, question[:80]))
         time.sleep(1)
 
@@ -700,6 +755,23 @@ def case_c1(sample=None):
           f"({pct(found_top, tried)})")
     print(f"  first result    {found_first} of {tried}   "
           f"({pct(found_first, tried)})")
+    if dropped:
+        print(f"  dropped         {dropped} questions that named nothing "
+              f"and could not fairly be searched for")
+
+    print(f"\n  of the {tried - found_top} not in the top {TOP_K}:")
+    print(f"    {found_deep} were in the top {DEEP}, ranked too low"
+          f"   — re-ranking would reach these, in code alone")
+    print(f"    {tried - found_top - found_deep} were not in the top {DEEP}"
+          f"   — not found at all; ordering cannot help")
+    if found_deep > (tried - found_top - found_deep):
+        print(f"\n  Most of the gap is ordering. A re-ranking pass over the "
+              f"top {DEEP} is the next thing to try.")
+    elif tried > found_top:
+        print(f"\n  Most of the gap is the search not seeing these "
+              f"documents at all. Re-ordering cannot reach them, so this "
+              f"points at the embedding model and the chunk size — the "
+              f"two settings that need every document reprocessed.")
     for name, q in misses[:8]:
         print(f"    missed: {name}\n            {q}")
 
@@ -708,8 +780,12 @@ def case_c1(sample=None):
            "pass" if rate >= 0.9 else "partial" if rate >= 0.7 else "fail",
            f"retrieval accuracy {pct(found_top, tried)} — the source document "
            f"came back in the top {TOP_K} for {found_top} of {tried} "
-           f"paraphrased questions, and was first for {found_first}. Target "
-           f"is 90%")
+           f"paraphrased questions, and was first for {found_first}. "
+           f"One passage per document, so the figure describes the "
+           f"collection rather than its longest documents"
+           + (f"; {dropped} questions named nothing and were dropped"
+              if dropped else "")
+           + ". Target is 90%")
 
 
 def case_c2(sample=None):

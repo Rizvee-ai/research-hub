@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 import db
-from config import DOCS_DIR, MIN_WORDS_PER_DOC
+from config import DOCS_DIR
 import reader
 import chunker
 import labeller
@@ -39,11 +39,9 @@ def ingest_file(path):
     full_text = "\n\n".join(t for _, t in pages)
     words = len(full_text.split())
 
-    if words < MIN_WORDS_PER_DOC:
-        reason = f"too little text ({words} words)"
-        db.record_excluded(path.name, h, str(path), reason)
-        return f"excluded ({reason})"
-
+    # Nothing is turned away for being short. A one-page memo is kept
+    # exactly like a four-hundred-page book. Only a file with no words
+    # at all is excluded, which the check below catches.
     chunks = chunker.split_document(pages)
     if not chunks:
         db.record_excluded(path.name, h, str(path), "no usable passages")

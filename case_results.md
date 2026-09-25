@@ -1,11 +1,10 @@
 # Test case results
 
-Run 25 September 2026, 14:27. Produced by `run_cases.py`.
+Run 25 September 2026, 19:27. Produced by `run_cases.py`.
 
 | ID | Case | Result | What it showed |
 | --- | --- | --- | --- |
-| C6 | A topic not covered | pass | 10 of 10 questions with no bearing on the collection stayed under the 0.46 threshold; the closest reached 0.411 |
-| D1 | Unanswerable question | pass | all 10 of 10 questions with no bearing on the collection were turned away, 10 by the 0.46 threshold and 0 by the model saying the passages do not answer them. Nothing was invented. The 0 that reached the model cost a call each and left the refusal to its judgement |
+| C1 | Different words, same meaning | partial | retrieval accuracy 80% — the source document came back in the top 20 for 77 of 96 paraphrased questions, and was first for 38. One passage per document, so the figure describes the collection rather than its longest documents; 4 questions named nothing and were dropped. Target is 90% |
 
 ## Not covered by this script
 
