@@ -26,7 +26,7 @@ MIN_WORDS_PER_PAGE = 25
 TOP_K = 8
 
 # below this, we treat the collection as not covering the question
-MIN_SIMILARITY = 0.25
+MIN_SIMILARITY = 0.46
 
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 

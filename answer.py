@@ -98,25 +98,77 @@ def ask(question, doc_type=None, topic=None):
 
     return resolve_citations(text, hits), hits
 
-
 def resolve_citations(text, hits):
-    """Replace [1] with a real reference, looked up from our own records."""
-    def reference(match):
-        n = int(match.group(1))
-        if not 1 <= n <= len(hits):
-            return match.group(0)
-        h = hits[n - 1]
-        name = h["title"] or h["filename"]
-        bits = [name]
-        if h["authors"]:
-            bits.append(h["authors"])
+    """
+    Replace [1] with a real reference, looked up from our own records.
+
+    A run of markers — [1][2][5] — becomes one bracket rather than
+    three, and references naming the same document and page appear
+    once. The model marks every passage a claim drew on, which is
+    correct, but three passages from one page are one source to a
+    reader.
+    """
+    def name_authors(authors):
+        # The column holds a list. Written straight into a string it
+        # arrives as Postgres's own notation, {"A","B"}, which is
+        # not a sentence.
+        if not authors:
+            return None
+        if isinstance(authors, (list, tuple)):
+            people = [str(a).strip() for a in authors if str(a).strip()]
+        else:
+            people = [p.strip().strip('"')
+                      for p in str(authors).strip("{}").split(",")
+                      if p.strip().strip('"')]
+        if not people:
+            return None
+        if len(people) == 1:
+            return people[0]
+        return ", ".join(people[:-1]) + " and " + people[-1]
+
+    def one(h):
+        bits = [h["title"] or h["filename"]]
+        who = name_authors(h["authors"])
+        if who:
+            bits.append(who)
         if h["doc_date"]:
             bits.append(str(h["doc_date"]))
         if h["page"] and h["page"] > 1:
             bits.append(f"p.{h['page']}")
-        return "(" + ", ".join(bits) + ")"
+        return ", ".join(bits)
 
-    return re.sub(r"\[(\d+)\]", reference, text)
+    def run(match):
+        seen, out = set(), []
+        for n in (int(x) for x in re.findall(r"\d+", match.group(0))):
+            if not 1 <= n <= len(hits):
+                continue
+            reference = one(hits[n - 1])
+            if reference not in seen:
+                seen.add(reference)
+                out.append(reference)
+        if not out:
+            return match.group(0)
+        return "(" + "; ".join(out) + ")"
+
+    return re.sub(r"(?:\[\d+\])+(?:\s*\[\d+\])*", run, text)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":
